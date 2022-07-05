@@ -1,9 +1,9 @@
 #include <mpi.h>
-#include <sys/types.h>
 
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -300,6 +300,42 @@ AlltoallTopology create_complete_topology(const std::size_t num_entries,
     return complete;
 }
 
+AlltoallTopology create_grid_adjacent_topology(const std::size_t num_entries,
+                                               MPI_Comm comm) {
+    // Assumed grid structure:
+    // 0 1 2
+    // 3 4 5
+    // 6 7 8
+    // Communicate with adjacent cells only
+    const int size = get_comm_size(comm);
+    const int rank = get_comm_rank(comm);
+    const int row_length = std::floor(std::sqrt(size));
+    const int my_row = rank / row_length;
+    const int my_col = rank % row_length;
+
+    auto encode = [&](const int row, const int col) {
+        const auto id = row * row_length + col;
+        assert(id < size);
+        return id;
+    };
+
+    AlltoallTopology topology(size);
+    if (my_row > 0) {  // up
+        topology[encode(my_row - 1, my_col)] = num_entries;
+    }
+    if (my_col > 0) {  // left
+        topology[encode(my_row, my_col - 1)] = num_entries;
+    }
+    if (my_col + 1 < row_length && rank + 1 < size) {  // right
+        topology[encode(my_row, my_col + 1)] = num_entries;
+    }
+    if (rank + row_length < size) {  // down
+        topology[encode(my_row + 1, my_col)] = num_entries;
+    }
+
+    return topology;
+}
+
 int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
 
@@ -328,6 +364,15 @@ int main(int argc, char *argv[]) {
     }
     run_benchmark<int>(create_complete_topology(num_entries, MPI_COMM_WORLD),
                        MPI_INT, MPI_COMM_WORLD);
+
+    num_entries = 25'000'000;
+    if (rank == 0) {
+        std::cout << "Grid-adjacend topology with " << num_entries
+                  << " * 4 bytes" << std::endl;
+    }
+    run_benchmark<int>(
+        create_grid_adjacent_topology(num_entries, MPI_COMM_WORLD), MPI_INT,
+        MPI_COMM_WORLD);
 
     MPI_Finalize();
 }
