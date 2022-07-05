@@ -441,7 +441,7 @@ int main(int argc, char *argv[]) {
 
     num_entries = 100'000'000;
     if (rank == 0) {
-        std::cout << "Identity topology with " << num_entries << " * 4 bytes"
+        std::cout << "Identity topology with " << num_entries / 1'000'000 << " M * 4 bytes"
                   << std::endl;
     }
     run_benchmark<int>(create_identitiy_topology(num_entries, MPI_COMM_WORLD),
@@ -449,7 +449,7 @@ int main(int argc, char *argv[]) {
 
     num_entries = 10'000'000;
     if (rank == 0) {
-        std::cout << "Complete topology with " << num_entries << " * 4 bytes"
+        std::cout << "Complete topology with " << num_entries / 1'000'000 << " M * 4 bytes"
                   << std::endl;
     }
     run_benchmark<int>(create_complete_topology(num_entries, MPI_COMM_WORLD),
@@ -457,8 +457,8 @@ int main(int argc, char *argv[]) {
 
     num_entries = 25'000'000;
     if (rank == 0) {
-        std::cout << "Grid-adjacent topology with " << num_entries
-                  << " * 4 bytes" << std::endl;
+        std::cout << "Grid-adjacent topology with " << num_entries / 1'000'000
+                  << " M * 4 bytes" << std::endl;
     }
     run_benchmark<int>(
         create_grid_adjacent_topology(num_entries, MPI_COMM_WORLD), MPI_INT,
