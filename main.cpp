@@ -74,7 +74,95 @@ AlltoallResult<Data> complete_send_recv_alltoall(
         MPI_Recv(result[pe].data(), count, data_type, pe, 0, comm,
                  MPI_STATUS_IGNORE);
     }
-    MPI_Waitall(size, requests.data(), MPI_STATUS_IGNORE);
+    MPI_Waitall(size, requests.data(), MPI_STATUSES_IGNORE);
+    const auto end = now();
+
+    const auto time =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    return {std::move(result), time};
+}
+
+template <typename Data>
+AlltoallResult<Data> sparse_send_recv_alltoall(
+    const std::vector<std::vector<Data>> &data, MPI_Datatype data_type,
+    MPI_Comm comm) {
+    const int size = get_comm_size(comm);
+    const int rank = get_comm_rank(comm);
+    std::vector<MPI_Request> requests;
+    requests.reserve(size);
+    std::vector<std::uint8_t> send_message_to(size);
+
+    // Exchange send / recv counts to preallocate recv buffer
+    std::vector<int> send_counts(size);
+    for (int pe = 0; pe < size; ++pe) {
+        send_counts[pe] = data[pe].size();
+    }
+    std::vector<int> recv_counts(size);
+    MPI_Alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1, MPI_INT,
+                 comm);
+
+    std::vector<std::vector<Data>> result(size);
+    for (int pe = 0; pe < size; ++pe) {
+        result[pe].resize(recv_counts[pe]);
+    }
+
+    const auto start = now();
+    for (int pe = 0; pe < size; ++pe) {
+        if (data[pe].empty()) {
+            continue;
+        }
+
+        send_message_to[pe] = 1;
+        requests.emplace_back();
+
+        MPI_Issend(data[pe].data(), data[pe].size(), data_type, pe, 0, comm,
+                   &requests.back());
+    }
+
+    int isend_done = 0;
+    while (isend_done == 0) {
+        int iprobe_success = 1;
+        while (iprobe_success > 0) {
+            iprobe_success = 0;
+
+            MPI_Status status;
+            MPI_Iprobe(MPI_ANY_SOURCE, 0, comm, &iprobe_success, &status);
+            if (iprobe_success) {
+                int count;
+                MPI_Get_count(&status, data_type, &count);
+                const int pe = status.MPI_SOURCE;
+                MPI_Recv(result[pe].data(), count, data_type, pe, 0, comm,
+                         MPI_STATUS_IGNORE);
+            }
+        }
+
+        isend_done = 0;
+        MPI_Testall(requests.size(), requests.data(), &isend_done,
+                    MPI_STATUSES_IGNORE);
+    }
+
+    MPI_Request barrier_request;
+    MPI_Ibarrier(comm, &barrier_request);
+
+    int ibarrier_done = 0;
+    while (ibarrier_done == 0) {
+        int iprobe_success = 1;
+        while (iprobe_success > 0) {
+            iprobe_success = 0;
+
+            MPI_Status status;
+            MPI_Iprobe(MPI_ANY_SOURCE, 0, comm, &iprobe_success, &status);
+            if (iprobe_success) {
+                int count;
+                MPI_Get_count(&status, data_type, &count);
+                const int pe = status.MPI_SOURCE;
+                MPI_Recv(result[pe].data(), count, data_type, pe, 0, comm,
+                         MPI_STATUS_IGNORE);
+            }
+        }
+
+        MPI_Test(&barrier_request, &ibarrier_done, MPI_STATUS_IGNORE);
+    }
     const auto end = now();
 
     const auto time =
@@ -200,6 +288,7 @@ auto get_competitors() {
         std::make_pair("MPI_Alltoall", mpi_alltoall<Data>),
         std::make_pair("Complete Isend+Recv",
                        complete_send_recv_alltoall<Data>),
+        std::make_pair("Sparse Isend+Recv", sparse_send_recv_alltoall<Data>),
     };
 }
 
@@ -262,10 +351,11 @@ void run_benchmark(AlltoallTopology topology, MPI_Datatype data_type,
             const auto [ans, time] = competitor(data, data_type, comm);
 
             if (rank == 0) {
+                std::cout << std::setw(7);
                 if (ans.empty()) {
-                    std::cout << std::setw(6) << "-" << std::flush;
+                    std::cout << "-" << std::flush;
                 } else {
-                    std::cout << std::setw(6) << time.count() << std::flush;
+                    std::cout << time.count() << std::flush;
                 }
                 total_time += time;
             }
@@ -367,7 +457,7 @@ int main(int argc, char *argv[]) {
 
     num_entries = 25'000'000;
     if (rank == 0) {
-        std::cout << "Grid-adjacend topology with " << num_entries
+        std::cout << "Grid-adjacent topology with " << num_entries
                   << " * 4 bytes" << std::endl;
     }
     run_benchmark<int>(
