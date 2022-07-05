@@ -1,5 +1,5 @@
 project(SparseA2ABench)
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.16)
 
 add_executable(SparseA2ABenchmark main.cpp)
 
