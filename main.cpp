@@ -1,4 +1,5 @@
 #include <mpi.h>
+#include <sys/types.h>
 
 #include <algorithm>
 #include <cassert>
@@ -34,7 +35,7 @@ template <typename Data>
 using AlltoallResult =
     std::tuple<std::vector<std::vector<Data>>, std::chrono::milliseconds>;
 
-using AlltoallTopology = std::unordered_map<std::size_t, std::size_t>;
+using AlltoallTopology = std::vector<std::size_t>;
 
 template <typename Data>
 AlltoallResult<Data> complete_send_recv_alltoall(
@@ -75,6 +76,56 @@ AlltoallResult<Data> complete_send_recv_alltoall(
     }
     MPI_Waitall(size, requests.data(), MPI_STATUS_IGNORE);
     const auto end = now();
+
+    const auto time =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    return {std::move(result), time};
+}
+
+template <typename Data>
+AlltoallResult<Data> mpi_alltoall(const std::vector<std::vector<Data>> &data,
+                                  MPI_Datatype data_type, MPI_Comm comm) {
+    const int size = get_comm_size(comm);
+
+    // Check if applicable
+    bool all_same = true;
+    for (int pe = 1; pe < size; ++pe) {
+        all_same &= data[pe].size() == data[pe - 1].size();
+    }
+    long all_same_key = all_same ? data[0].size() : -1;
+    std::vector<long> all_keys(size);
+    MPI_Allgather(&all_same_key, 1, MPI_LONG, all_keys.data(), 1, MPI_LONG,
+                  comm);
+    for (int pe = 1; pe < size; ++pe) {
+        all_same &= all_keys[pe] >= 0 && all_keys[pe] == all_keys[pe - 1];
+    }
+
+    if (!all_same) {
+        using namespace std::chrono_literals;
+        return {std::vector<std::vector<Data>>{}, 0ms};
+    }
+
+    const std::size_t elements_per_pe = data[0].size();
+
+    std::vector<Data> send_buf(elements_per_pe * size);
+    for (int pe = 0; pe < size; ++pe) {
+        std::copy(data[pe].begin(), data[pe].end(),
+                  send_buf.begin() + elements_per_pe * pe);
+    }
+
+    std::vector<Data> recv_buf(elements_per_pe * size);
+    const auto start = now();
+    MPI_Alltoall(send_buf.data(), elements_per_pe, data_type, recv_buf.data(),
+                 elements_per_pe, data_type, comm);
+    const auto end = now();
+
+    std::vector<std::vector<Data>> result(size,
+                                          std::vector<Data>(elements_per_pe));
+    for (int pe = 0; pe < size; ++pe) {
+        std::copy(recv_buf.begin() + elements_per_pe * pe,
+                  recv_buf.begin() + elements_per_pe * (pe + 1),
+                  result[pe].begin());
+    }
 
     const auto time =
         std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
@@ -146,6 +197,7 @@ auto get_competitors() {
         std::function<AlltoallResult<Data>(
             const std::vector<std::vector<Data>> &, MPI_Datatype, MPI_Comm)>>>{
         std::make_pair("MPI_Alltoallv", mpi_alltoallv<Data>),
+        std::make_pair("MPI_Alltoall", mpi_alltoall<Data>),
         std::make_pair("Complete Isend+Recv",
                        complete_send_recv_alltoall<Data>),
     };
@@ -167,16 +219,6 @@ std::size_t encode(const int from, const int to, const int size) {
            static_cast<std::size_t>(to);
 }
 
-void print_topology(AlltoallTopology &topology, MPI_Comm comm) {
-    const int size = get_comm_size(comm);
-    for (int from = 0; from < size; ++from) {
-        for (int to = 0; to < size; ++to) {
-            std::cout << topology[encode(from, to, size)];
-        }
-        std::cout << std::endl;
-    }
-}
-
 template <typename Data>
 void run_benchmark(AlltoallTopology topology, MPI_Datatype data_type,
                    MPI_Comm comm) {
@@ -188,17 +230,19 @@ void run_benchmark(AlltoallTopology topology, MPI_Datatype data_type,
     // Generate data
     std::vector<std::vector<Data>> data(size);
     for (int pe = 0; pe < size; ++pe) {
-        const std::size_t n = topology[encode(rank, pe, size)];
+        const std::size_t n = topology[pe];
         data[pe].resize(n);
         generate_data(data[pe].data(), n);
     }
 
     // Total memory
-    std::size_t total_nbytes = 0;
-    for (const auto &[key, value] : topology) {
-        total_nbytes += value;
+    long local_total_nbytes = 0;
+    for (auto nbytes : topology) {
+        local_total_nbytes += nbytes;
     }
-    total_nbytes *= sizeof(Data);
+    long total_nbytes;
+    MPI_Allreduce(&local_total_nbytes, &total_nbytes, 1, MPI_LONG, MPI_SUM,
+                  comm);
 
     // Warmup
     for (int round = 0; round < NUM_WARMUPS; ++round) {
@@ -218,7 +262,11 @@ void run_benchmark(AlltoallTopology topology, MPI_Datatype data_type,
             const auto [ans, time] = competitor(data, data_type, comm);
 
             if (rank == 0) {
-                std::cout << std::setw(6) << time.count() << std::flush;
+                if (ans.empty()) {
+                    std::cout << std::setw(6) << "-" << std::flush;
+                } else {
+                    std::cout << std::setw(6) << time.count() << std::flush;
+                }
                 total_time += time;
             }
         }
@@ -229,16 +277,27 @@ void run_benchmark(AlltoallTopology topology, MPI_Datatype data_type,
                       << std::setw(5) << mbs << " MB/s" << std::endl;
         }
     }
+
+    if (rank == 0) {
+        std::cout << std::endl;
+    }
 }
 
 AlltoallTopology create_identitiy_topology(const std::size_t num_entries,
                                            MPI_Comm comm) {
     const int size = get_comm_size(comm);
-    AlltoallTopology identitiy;
-    for (int pe = 0; pe < size; ++pe) {
-        identitiy[encode(pe, pe, size)] = num_entries;
-    }
+    const int rank = get_comm_rank(comm);
+    AlltoallTopology identitiy(size);
+    identitiy[rank] = num_entries;
     return identitiy;
+}
+
+AlltoallTopology create_complete_topology(const std::size_t num_entries,
+                                          MPI_Comm comm) {
+    const int size = get_comm_size(comm);
+    AlltoallTopology complete(size);
+    std::fill(complete.begin(), complete.end(), num_entries);
+    return complete;
 }
 
 int main(int argc, char *argv[]) {
@@ -247,7 +306,27 @@ int main(int argc, char *argv[]) {
     const int size = get_comm_size(MPI_COMM_WORLD);
     const int rank = get_comm_rank(MPI_COMM_WORLD);
 
-    run_benchmark<int>(create_identitiy_topology(100'000'000, MPI_COMM_WORLD),
+    if (rank == 0) {
+        std::cout << "MPI_SIZE=" << size << std::endl;
+        std::cout << std::endl;
+    }
+
+    long num_entries;
+
+    num_entries = 100'000'000;
+    if (rank == 0) {
+        std::cout << "Identity topology with " << num_entries << " * 4 bytes"
+                  << std::endl;
+    }
+    run_benchmark<int>(create_identitiy_topology(num_entries, MPI_COMM_WORLD),
+                       MPI_INT, MPI_COMM_WORLD);
+
+    num_entries = 10'000'000;
+    if (rank == 0) {
+        std::cout << "Complete topology with " << num_entries << " * 4 bytes"
+                  << std::endl;
+    }
+    run_benchmark<int>(create_complete_topology(num_entries, MPI_COMM_WORLD),
                        MPI_INT, MPI_COMM_WORLD);
 
     MPI_Finalize();
