@@ -15,8 +15,8 @@
 #include <unordered_map>
 #include <vector>
 
-constexpr int NUM_REPETITIONS = 5;
-constexpr int NUM_WARMUPS = 0;
+constexpr int NUM_REPETITIONS = 10;
+constexpr int NUM_WARMUPS = 1;
 
 constexpr bool csv = true;
 
@@ -606,6 +606,7 @@ AlltoallTopology create_complete_topology(const std::size_t num_entries,
 }
 
 AlltoallTopology create_grid_adjacent_topology(const std::size_t num_entries,
+                                               const bool diagonal_neighbors,
                                                MPI_Comm comm) {
     // Assumed grid structure:
     // 0 1 2
@@ -637,6 +638,20 @@ AlltoallTopology create_grid_adjacent_topology(const std::size_t num_entries,
     if (rank + row_length < size) {  // down
         topology[encode(my_row + 1, my_col)] = num_entries;
     }
+    if (diagonal_neighbors) {
+        if (my_row > 0 && my_col > 0) {  // top left
+            topology[encode(my_row - 1, my_col - 1)] = num_entries;
+        }
+        if (my_row > 0 && my_col + 1 < row_length) {  // top right
+            topology[encode(my_row - 1, my_col + 1)] = num_entries;
+        }
+        if (my_col > 0 && rank + row_length - 1 < size) {  // bottom left
+            topology[encode(my_row + 1, my_col - 1)] = num_entries;
+        }
+        if (my_col + 1 < row_length && rank + row_length + 1 < size) { // bottom right
+            topology[encode(my_row + 1, my_col + 1)] = num_entries;
+        }
+    }
 
     return topology;
 }
@@ -664,13 +679,20 @@ int main(int argc, char *argv[]) {
             "identity", create_identitiy_topology(message_size, MPI_COMM_WORLD),
             MPI_INT, MPI_COMM_WORLD);
 
+        /*
+                run_benchmark<int>(
+                    "complete", create_complete_topology(message_size,
+           MPI_COMM_WORLD), MPI_INT, MPI_COMM_WORLD);
+        */
+
         run_benchmark<int>(
-            "complete", create_complete_topology(message_size, MPI_COMM_WORLD),
+            "adjacent_cells_4",
+            create_grid_adjacent_topology(message_size, false, MPI_COMM_WORLD),
             MPI_INT, MPI_COMM_WORLD);
 
         run_benchmark<int>(
-            "adjacent_cells",
-            create_grid_adjacent_topology(message_size, MPI_COMM_WORLD),
+            "adjacent_cells_8",
+            create_grid_adjacent_topology(message_size, true, MPI_COMM_WORLD),
             MPI_INT, MPI_COMM_WORLD);
     }
 
