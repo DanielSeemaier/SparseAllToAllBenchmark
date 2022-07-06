@@ -18,6 +18,8 @@
 constexpr int NUM_REPETITIONS = 5;
 constexpr int NUM_WARMUPS = 0;
 
+constexpr bool csv = true;
+
 int get_comm_size(MPI_Comm comm) {
     int size;
     MPI_Comm_size(comm, &size);
@@ -44,7 +46,11 @@ AlltoallResult<Data> grid_alltoall(const std::vector<std::vector<Data>> &data,
     const int size = get_comm_size(comm);
     const int rank = get_comm_rank(comm);
     const int grid_size = std::sqrt(size);
-    assert(grid_size * grid_size == size);
+    if (grid_size * grid_size != size) {
+        using namespace std::chrono_literals;
+        return {std::vector<std::vector<Data>>{}, 0ms};
+    }
+
     const int row = rank / grid_size;
     const int col = rank % grid_size;
 
@@ -452,12 +458,12 @@ auto get_competitors() {
         std::string,
         std::function<AlltoallResult<Data>(
             const std::vector<std::vector<Data>> &, MPI_Datatype, MPI_Comm)>>>{
-        std::make_pair("MPI_Alltoallv", mpi_alltoallv<Data>),
-        std::make_pair("MPI_Alltoall", mpi_alltoall<Data>),
-        std::make_pair("Complete Isend+Recv",
+        std::make_pair("alltoallv", mpi_alltoallv<Data>),
+        std::make_pair("alltoall", mpi_alltoall<Data>),
+        std::make_pair("complete_isend_recv",
                        complete_send_recv_alltoall<Data>),
-        std::make_pair("Sparse Isend+Recv", sparse_send_recv_alltoall<Data>),
-        std::make_pair("2D Grid", grid_alltoall<Data>),
+        std::make_pair("sparse_isend_recv", sparse_send_recv_alltoall<Data>),
+        std::make_pair("grid_2d", grid_alltoall<Data>),
     };
 }
 
@@ -478,8 +484,8 @@ std::size_t encode(const int from, const int to, const int size) {
 }
 
 template <typename Data>
-void run_benchmark(AlltoallTopology topology, MPI_Datatype data_type,
-                   MPI_Comm comm) {
+void run_benchmark(const std::string topology_name, AlltoallTopology topology,
+                   MPI_Datatype data_type, MPI_Comm comm) {
     using namespace std::chrono_literals;
 
     const int size = get_comm_size(comm);
@@ -493,14 +499,18 @@ void run_benchmark(AlltoallTopology topology, MPI_Datatype data_type,
         generate_data(data[pe].data(), n);
     }
 
-    // Total memory
-    long local_total_nbytes = 0;
-    for (auto nbytes : topology) {
-        local_total_nbytes += nbytes;
-    }
-    long total_nbytes;
-    MPI_Allreduce(&local_total_nbytes, &total_nbytes, 1, MPI_LONG, MPI_SUM,
-                  comm);
+    // Message sizes
+    const auto data_size = sizeof(Data);
+
+    const long local_size =
+        std::accumulate(topology.begin(), topology.end(), 0);
+
+    long global_min_size, global_max_size, global_total_size;
+    MPI_Reduce(&local_size, &global_min_size, 1, MPI_LONG, MPI_MIN, 0, comm);
+    MPI_Reduce(&local_size, &global_max_size, 1, MPI_LONG, MPI_MAX, 0, comm);
+    MPI_Reduce(&local_size, &global_total_size, 1, MPI_LONG, MPI_SUM, 0, comm);
+    const long global_avg_size = global_total_size / size;
+    const long total_nbytes = global_total_size * data_size;
 
     // Warmup
     for (int round = 0; round < NUM_WARMUPS; ++round) {
@@ -512,13 +522,14 @@ void run_benchmark(AlltoallTopology topology, MPI_Datatype data_type,
     // Measurement
     std::vector<std::vector<Data>> expected_result;
 
-    for (const auto &[name, competitor] : get_competitors<Data>()) {
-        if (rank == 0) {
-            std::cout << std::setw(30) << std::left << name;
+    for (const auto &[competitor_name, competitor] : get_competitors<Data>()) {
+        if (!csv && rank == 0) {
+            std::cout << std::setw(30) << std::left << competitor_name;
         }
 
         auto total_time = 0ms;
         for (int round = 0; round < NUM_REPETITIONS; ++round) {
+            // Run algorithm
             const auto [ans, time] = competitor(data, data_type, comm);
             if (!ans.empty()) {
                 if (expected_result.empty()) {
@@ -531,24 +542,39 @@ void run_benchmark(AlltoallTopology topology, MPI_Datatype data_type,
             }
 
             if (rank == 0) {
-                std::cout << std::setw(7);
-                if (ans.empty()) {
-                    std::cout << "-" << std::flush;
+                if (csv) {
+                    const double mbs =
+                        1.0 * total_nbytes / time.count() / 1000.0;
+                    std::cout << size << "," << topology_name << ","
+                              << data_size << "," << global_total_size << ","
+                              << global_max_size << "," << global_avg_size
+                              << "," << global_min_size << ","
+                              << competitor_name << "," << round << ","
+                              << time.count() << "," << mbs << std::endl;
                 } else {
-                    std::cout << time.count() << std::flush;
+                    std::cout << std::setw(7);
+                    if (ans.empty()) {
+                        std::cout << "NA" << std::flush;
+                    } else {
+                        std::cout << time.count() << std::flush;
+                    }
                 }
+
                 total_time += time;
             }
         }
 
         if (rank == 0) {
-            const double mbs = 1.0 * total_nbytes / total_time.count() / 1000.0;
-            std::cout << "== " << std::fixed << std::setprecision(0)
-                      << std::setw(5) << mbs << " MB/s" << std::endl;
+            const double mbs = 1.0 * total_nbytes /
+                               (total_time.count() / NUM_REPETITIONS) / 1000.0;
+            if (!csv) {
+                std::cout << "== " << std::fixed << std::setprecision(0)
+                          << std::setw(5) << mbs << " MB/s" << std::endl;
+            }
         }
     }
 
-    if (rank == 0) {
+    if (!csv && rank == 0) {
         std::cout << std::endl;
     }
 }
@@ -615,33 +641,25 @@ int main(int argc, char *argv[]) {
     if (rank == 0) {
         std::cout << "MPI_SIZE=" << size << std::endl;
         std::cout << std::endl;
+        if (csv) {
+            std::cout
+                << "MPI,Topology,ElementSize,TotalSize,MaxSize,AvgSize,MinSize,"
+                   "Algorithm,Run,Time,MBs"
+                << std::endl;
+        }
     }
 
-    long num_entries;
-
-    num_entries = 1'000'000;
-    if (rank == 0) {
-        std::cout << "Identity topology with " << num_entries / 1'000'000
-                  << " M * 4 bytes" << std::endl;
-    }
-    run_benchmark<int>(create_identitiy_topology(num_entries, MPI_COMM_WORLD),
+    run_benchmark<int>("identity",
+                       create_identitiy_topology(10'000'000, MPI_COMM_WORLD),
                        MPI_INT, MPI_COMM_WORLD);
 
-    num_entries = 1'000'000;
-    if (rank == 0) {
-        std::cout << "Complete topology with " << num_entries / 1'000'000
-                  << " M * 4 bytes" << std::endl;
-    }
-    run_benchmark<int>(create_complete_topology(num_entries, MPI_COMM_WORLD),
+    run_benchmark<int>("complete",
+                       create_complete_topology(10'000'000, MPI_COMM_WORLD),
                        MPI_INT, MPI_COMM_WORLD);
 
-    num_entries = 1'000'000;
-    if (rank == 0) {
-        std::cout << "Grid-adjacent topology with " << num_entries / 1'000'000
-                  << " M * 4 bytes" << std::endl;
-    }
     run_benchmark<int>(
-        create_grid_adjacent_topology(num_entries, MPI_COMM_WORLD), MPI_INT,
+        "adjacent_cells",
+        create_grid_adjacent_topology(10'000'000, MPI_COMM_WORLD), MPI_INT,
         MPI_COMM_WORLD);
 
     MPI_Finalize();
