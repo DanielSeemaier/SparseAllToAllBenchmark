@@ -1,0 +1,3 @@
+[submodule "external/KaGen"]
+	path = external/KaGen
+	url = git@github.com:sebalamm/KaGen.git
