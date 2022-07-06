@@ -649,18 +649,20 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    run_benchmark<int>("identity",
-                       create_identitiy_topology(10'000'000, MPI_COMM_WORLD),
-                       MPI_INT, MPI_COMM_WORLD);
+    for (std::size_t message_size : {1, 1 << 10, 1 << 20}) {
+        run_benchmark<int>(
+            "identity", create_identitiy_topology(message_size, MPI_COMM_WORLD),
+            MPI_INT, MPI_COMM_WORLD);
 
-    run_benchmark<int>("complete",
-                       create_complete_topology(10'000'000, MPI_COMM_WORLD),
-                       MPI_INT, MPI_COMM_WORLD);
+        run_benchmark<int>(
+            "complete", create_complete_topology(message_size, MPI_COMM_WORLD),
+            MPI_INT, MPI_COMM_WORLD);
 
-    run_benchmark<int>(
-        "adjacent_cells",
-        create_grid_adjacent_topology(10'000'000, MPI_COMM_WORLD), MPI_INT,
-        MPI_COMM_WORLD);
+        run_benchmark<int>(
+            "adjacent_cells",
+            create_grid_adjacent_topology(message_size, MPI_COMM_WORLD),
+            MPI_INT, MPI_COMM_WORLD);
+    }
 
     MPI_Finalize();
 
