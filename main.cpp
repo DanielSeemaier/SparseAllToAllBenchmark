@@ -34,9 +34,10 @@ int get_comm_rank(MPI_Comm comm) {
 
 auto now() { return std::chrono::steady_clock::now(); }
 
+using Resolution = std::chrono::nanoseconds;
+
 template <typename Data>
-using AlltoallResult =
-    std::tuple<std::vector<std::vector<Data>>, std::chrono::milliseconds>;
+using AlltoallResult = std::tuple<std::vector<std::vector<Data>>, Resolution>;
 
 using AlltoallTopology = std::vector<std::size_t>;
 
@@ -48,7 +49,7 @@ AlltoallResult<Data> grid_alltoall(const std::vector<std::vector<Data>> &data,
     const int grid_size = std::sqrt(size);
     if (grid_size * grid_size != size) {
         using namespace std::chrono_literals;
-        return {std::vector<std::vector<Data>>{}, 0ms};
+        return {std::vector<std::vector<Data>>{}, 0s};
     }
 
     const int row = rank / grid_size;
@@ -201,7 +202,7 @@ AlltoallResult<Data> grid_alltoall(const std::vector<std::vector<Data>> &data,
     MPI_Comm_free(&row_comm);
     MPI_Comm_free(&col_comm);
 
-    const auto time = std::chrono::duration_cast<std::chrono::milliseconds>(
+    const auto time = std::chrono::duration_cast<Resolution>(
         (end_1st_hop_counts - start_1st_hop_counts) +
         (end_1st_hop - start_1st_hop) +
         (end_payload_counts - start_payload_counts) +
@@ -251,8 +252,7 @@ AlltoallResult<Data> complete_send_recv_alltoall(
     MPI_Waitall(size, requests.data(), MPI_STATUSES_IGNORE);
     const auto end = now();
 
-    const auto time =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    const auto time = std::chrono::duration_cast<Resolution>(end - start);
     return {std::move(result), time};
 }
 
@@ -339,8 +339,7 @@ AlltoallResult<Data> sparse_send_recv_alltoall(
     }
     const auto end = now();
 
-    const auto time =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    const auto time = std::chrono::duration_cast<Resolution>(end - start);
     return {std::move(result), time};
 }
 
@@ -364,7 +363,7 @@ AlltoallResult<Data> mpi_alltoall(const std::vector<std::vector<Data>> &data,
 
     if (!all_same) {
         using namespace std::chrono_literals;
-        return {std::vector<std::vector<Data>>{}, 0ms};
+        return {std::vector<std::vector<Data>>{}, 0s};
     }
 
     const std::size_t elements_per_pe = data[0].size();
@@ -389,8 +388,7 @@ AlltoallResult<Data> mpi_alltoall(const std::vector<std::vector<Data>> &data,
                   result[pe].begin());
     }
 
-    const auto time =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    const auto time = std::chrono::duration_cast<Resolution>(end - start);
     return {std::move(result), time};
 }
 
@@ -444,10 +442,8 @@ AlltoallResult<Data> mpi_alltoallv(const std::vector<std::vector<Data>> &data,
                   recv_buf.begin() + recv_displs[pe + 1], result[pe].begin());
     }
 
-    const auto elapsed_time =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            (end_alltoall - start_alltoall) +
-            (end_alltoallv - start_alltoallv));
+    const auto elapsed_time = std::chrono::duration_cast<Resolution>(
+        (end_alltoall - start_alltoall) + (end_alltoallv - start_alltoallv));
 
     return {std::move(result), elapsed_time};
 }
@@ -481,6 +477,20 @@ void generate_data(Data *dst, const std::size_t n) {
 std::size_t encode(const int from, const int to, const int size) {
     return static_cast<std::size_t>(from) * static_cast<std::size_t>(size) +
            static_cast<std::size_t>(to);
+}
+
+template <typename Duration>
+double compute_mbs(const std::size_t nbytes, const Duration time) {
+    const auto period = 1.0 * Duration::period::num / Duration::period::den;
+    /*
+    std::cout
+        << std::endl
+        << nbytes << " Bytes in "
+        << std::chrono::duration_cast<std::chrono::milliseconds>(time).count()
+        << " ms == " << (1.0 * nbytes / 1'000'000) / (time.count() * period)
+        << std::endl;
+        */
+    return (1.0 * nbytes / 1'000'000) / (time.count() * period);
 }
 
 template <typename Data>
@@ -527,7 +537,7 @@ void run_benchmark(const std::string topology_name, AlltoallTopology topology,
             std::cout << std::setw(30) << std::left << competitor_name;
         }
 
-        auto total_time = 0ms;
+        auto total_time = Resolution(0s);
         for (int round = 0; round < NUM_REPETITIONS; ++round) {
             // Run algorithm
             const auto [ans, time] = competitor(data, data_type, comm);
@@ -543,14 +553,13 @@ void run_benchmark(const std::string topology_name, AlltoallTopology topology,
 
             if (rank == 0) {
                 if (csv) {
-                    const double mbs =
-                        1.0 * total_nbytes / time.count() / 1000.0;
                     std::cout << size << "," << topology_name << ","
                               << data_size << "," << global_total_size << ","
                               << global_max_size << "," << global_avg_size
                               << "," << global_min_size << ","
                               << competitor_name << "," << round << ","
-                              << time.count() << "," << mbs << std::endl;
+                              << time.count() << ","
+                              << compute_mbs(total_nbytes, time) << std::endl;
                 } else {
                     std::cout << std::setw(7);
                     if (ans.empty()) {
@@ -565,8 +574,8 @@ void run_benchmark(const std::string topology_name, AlltoallTopology topology,
         }
 
         if (rank == 0) {
-            const double mbs = 1.0 * total_nbytes /
-                               (total_time.count() / NUM_REPETITIONS) / 1000.0;
+            const double mbs =
+                compute_mbs(total_nbytes * data_size, total_time);
             if (!csv) {
                 std::cout << "== " << std::fixed << std::setprecision(0)
                           << std::setw(5) << mbs << " MB/s" << std::endl;
@@ -649,7 +658,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    for (std::size_t message_size : {1, 1 << 10, 1 << 20}) {
+    for (std::size_t message_size :
+         {1 << 0, 1 << 5, 1 << 10, 1 << 15, 1 << 20, 1 << 25}) {
         run_benchmark<int>(
             "identity", create_identitiy_topology(message_size, MPI_COMM_WORLD),
             MPI_INT, MPI_COMM_WORLD);
