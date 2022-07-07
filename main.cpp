@@ -5,6 +5,7 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -22,7 +23,7 @@
 constexpr int NUM_REPETITIONS = 10;
 constexpr int NUM_WARMUPS = 1;
 
-constexpr bool csv = false;
+constexpr bool csv = true;
 
 template <typename Data>
 auto get_competitors() {
@@ -31,7 +32,7 @@ auto get_competitors() {
         std::function<AlltoallResult<Data>(
             const std::vector<std::vector<Data>> &, MPI_Datatype, MPI_Comm)>>>{
         std::make_pair("alltoallv", mpi_alltoallv<Data>),
-        //std::make_pair("alltoall", mpi_alltoall<Data>),
+        // std::make_pair("alltoall", mpi_alltoall<Data>),
         std::make_pair("complete_isend_recv",
                        complete_send_recv_alltoall<Data>),
         std::make_pair("sparse_isend_recv", sparse_send_recv_alltoall<Data>),
@@ -176,6 +177,14 @@ void run_benchmark(const std::string topology_name, AlltoallTopology topology,
 int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
 
+    if (argc < 3) {
+        std::cout << "./" << argv[0] << " <N> <M>" << std::endl;
+        std::exit(1);
+    }
+
+    const int N = std::atoi(argv[1]);
+    const int M = std::atoi(argv[2]);
+
     const int size = get_comm_size(MPI_COMM_WORLD);
     const int rank = get_comm_rank(MPI_COMM_WORLD);
 
@@ -190,34 +199,55 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    const auto id_topology = create_identitiy_topology(1, MPI_COMM_WORLD);
+    const auto grid_4_topology =
+        create_grid_adjacent_topology(1, false, MPI_COMM_WORLD);
+    const auto grid_8_topology =
+        create_grid_adjacent_topology(1, true, MPI_COMM_WORLD);
+    const auto rgg2d_topology = create_graph_topology(
+        {.generator = Generator::RGG2D, .n = 1 << N, .m = 1 << M},
+        CommunicationMode::EDGE_CUT, MPI_COMM_WORLD);
+    const auto rgg3d_topology = create_graph_topology(
+        {.generator = Generator::RGG3D, .n = 1 << N, .m = 1 << M},
+        CommunicationMode::EDGE_CUT, MPI_COMM_WORLD);
+    const auto rhg_topology = create_graph_topology(
+        {.generator = Generator::RHG, .n = 1 << N, .m = 1 << M, .gamma = 3.0},
+        CommunicationMode::EDGE_CUT, MPI_COMM_WORLD);
+    const auto rmat_topology =
+        create_graph_topology({.generator = Generator::RMAT,
+                               .n = 1 << N,
+                               .m = 1 << M,
+                               .a = 0.1,
+                               .b = 0.2,
+                               .c = 0.3},
+                              CommunicationMode::EDGE_CUT, MPI_COMM_WORLD);
+
     for (std::size_t scale : {1, 5, 10, 15, 20, 25}) {
         const auto message_size = 1 << scale;
-        run_benchmark<int>(
-            "identity", create_identitiy_topology(message_size, MPI_COMM_WORLD),
-            MPI_INT, MPI_COMM_WORLD);
 
-        /*
-                run_benchmark<int>(
-                    "complete", create_complete_topology(message_size,
-           MPI_COMM_WORLD), MPI_INT, MPI_COMM_WORLD);
-        */
+        run_benchmark<int>("identity",
+                           scale_topology(id_topology, message_size), MPI_INT,
+                           MPI_COMM_WORLD);
 
-        run_benchmark<int>(
-            "adjacent_cells_4",
-            create_grid_adjacent_topology(message_size, false, MPI_COMM_WORLD),
-            MPI_INT, MPI_COMM_WORLD);
+        run_benchmark<int>("adjacent_cells_4",
+                           scale_topology(grid_4_topology, message_size),
+                           MPI_INT, MPI_COMM_WORLD);
 
-        run_benchmark<int>(
-            "adjacent_cells_8",
-            create_grid_adjacent_topology(message_size, true, MPI_COMM_WORLD),
-            MPI_INT, MPI_COMM_WORLD);
+        run_benchmark<int>("adjacent_cells_8",
+                           scale_topology(grid_8_topology, message_size),
+                           MPI_INT, MPI_COMM_WORLD);
 
-        run_benchmark<int>(
-            "rgg2d",
-            create_graph_topology(
-                {.generator = Generator::RGG2D, .n = (1 << 15), .m = (1 << 20)},
-                CommunicationMode::EDGE_CUT, 40 * scale, MPI_COMM_WORLD),
-            MPI_INT, MPI_COMM_WORLD);
+        run_benchmark<int>("rgg2d", scale_topology(rgg2d_topology, scale * 100),
+                           MPI_INT, MPI_COMM_WORLD);
+
+        run_benchmark<int>("rgg3d", scale_topology(rgg3d_topology, scale * 100),
+                           MPI_INT, MPI_COMM_WORLD);
+
+        run_benchmark<int>("rhg", scale_topology(rhg_topology, scale * 100),
+                           MPI_INT, MPI_COMM_WORLD);
+
+        run_benchmark<int>("rmat", scale_topology(rmat_topology, scale * 100),
+                           MPI_INT, MPI_COMM_WORLD);
     }
 
     MPI_Finalize();

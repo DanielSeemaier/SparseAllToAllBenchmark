@@ -103,7 +103,7 @@ KaGenResult generate(const KaGenSettings &settings, MPI_Comm comm) {
 
 AlltoallTopology create_graph_topology(const KaGenSettings &generator_settings,
                                        const CommunicationMode mode,
-                                       const std::size_t scale, MPI_Comm comm) {
+                                       MPI_Comm comm) {
     const auto rank = get_comm_rank(comm);
     const auto size = get_comm_size(comm);
 
@@ -126,10 +126,10 @@ AlltoallTopology create_graph_topology(const KaGenSettings &generator_settings,
         if (v < graph.vertex_range.first || v >= graph.vertex_range.second) {
             const int pe = find_owner(v);
             if (mode == CommunicationMode::EDGE_CUT) {
-                topology[pe] += scale;
+                topology[pe] += 1;
             } else if (mode == CommunicationMode::COMMUNICATION_VOLUME &&
                        !covered[pe]) {
-                topology[pe] += scale;
+                topology[pe] += 1;
                 covered[pe] = true;
                 covered_ids.push_back(pe);
             }
@@ -143,5 +143,12 @@ AlltoallTopology create_graph_topology(const KaGenSettings &generator_settings,
         last_u = u;
     }
 
+    return topology;
+}
+
+AlltoallTopology scale_topology(AlltoallTopology topology, const int scale) {
+    for (auto &v : topology) {
+        v *= scale;
+    }
     return topology;
 }

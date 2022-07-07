@@ -38,4 +38,6 @@ struct KaGenSettings {
 
 AlltoallTopology create_graph_topology(const KaGenSettings &generator_settings,
                                        const CommunicationMode mode,
-                                       const std::size_t scale, MPI_Comm comm);
+                                       MPI_Comm comm);
+
+AlltoallTopology scale_topology(AlltoallTopology topology, int scale);
