@@ -1,7 +1,7 @@
 project(SparseA2ABench)
 cmake_minimum_required(VERSION 3.16)
 
-add_executable(SparseA2ABenchmark main.cpp)
+add_executable(SparseA2ABenchmark main.cpp common.h topology.h topology.cpp)
 target_compile_features(SparseA2ABenchmark PRIVATE cxx_std_17)
 
 find_package(MPI REQUIRED)
