@@ -22,7 +22,7 @@
 constexpr int NUM_REPETITIONS = 10;
 constexpr int NUM_WARMUPS = 1;
 
-constexpr bool csv = true;
+constexpr bool csv = false;
 
 template <typename Data>
 auto get_competitors() {
@@ -31,7 +31,7 @@ auto get_competitors() {
         std::function<AlltoallResult<Data>(
             const std::vector<std::vector<Data>> &, MPI_Datatype, MPI_Comm)>>>{
         std::make_pair("alltoallv", mpi_alltoallv<Data>),
-        std::make_pair("alltoall", mpi_alltoall<Data>),
+        //std::make_pair("alltoall", mpi_alltoall<Data>),
         std::make_pair("complete_isend_recv",
                        complete_send_recv_alltoall<Data>),
         std::make_pair("sparse_isend_recv", sparse_send_recv_alltoall<Data>),
@@ -98,6 +98,12 @@ void run_benchmark(const std::string topology_name, AlltoallTopology topology,
     const long global_avg_size = global_total_size / size;
     const long total_nbytes = global_total_size * data_size;
 
+    if (!csv && rank == 0) {
+        std::cout << "Running topology " << topology_name << " with "
+                  << total_nbytes / 1'000'000 << " MB in total" << std::endl;
+        std::cout << std::endl;
+    }
+
     // Warmup
     for (int round = 0; round < NUM_WARMUPS; ++round) {
         for (const auto &[name, competitor] : get_competitors<Data>()) {
@@ -141,7 +147,10 @@ void run_benchmark(const std::string topology_name, AlltoallTopology topology,
                     if (ans.empty()) {
                         std::cout << "NA" << std::flush;
                     } else {
-                        std::cout << time.count() << std::flush;
+                        std::cout << std::chrono::duration_cast<
+                                         std::chrono::milliseconds>(time)
+                                         .count()
+                                  << std::flush;
                     }
                 }
 
@@ -181,8 +190,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    for (std::size_t message_size :
-         {1 << 0, 1 << 5, 1 << 10, 1 << 15, 1 << 20, 1 << 25}) {
+    for (std::size_t scale : {1, 5, 10, 15, 20, 25}) {
+        const auto message_size = 1 << scale;
         run_benchmark<int>(
             "identity", create_identitiy_topology(message_size, MPI_COMM_WORLD),
             MPI_INT, MPI_COMM_WORLD);
@@ -207,7 +216,7 @@ int main(int argc, char *argv[]) {
             "rgg2d",
             create_graph_topology(
                 {.generator = Generator::RGG2D, .n = (1 << 15), .m = (1 << 20)},
-                CommunicationMode::EDGE_CUT, 1'000, MPI_COMM_WORLD),
+                CommunicationMode::EDGE_CUT, 40 * scale, MPI_COMM_WORLD),
             MPI_INT, MPI_COMM_WORLD);
     }
 
