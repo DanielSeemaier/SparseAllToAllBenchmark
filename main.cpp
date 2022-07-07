@@ -202,6 +202,13 @@ int main(int argc, char *argv[]) {
             "adjacent_cells_8",
             create_grid_adjacent_topology(message_size, true, MPI_COMM_WORLD),
             MPI_INT, MPI_COMM_WORLD);
+
+        run_benchmark<int>(
+            "rgg2d",
+            create_graph_topology(
+                {.generator = Generator::RGG2D, .n = (1 << 15), .m = (1 << 20)},
+                CommunicationMode::EDGE_CUT, 1'000, MPI_COMM_WORLD),
+            MPI_INT, MPI_COMM_WORLD);
     }
 
     MPI_Finalize();
