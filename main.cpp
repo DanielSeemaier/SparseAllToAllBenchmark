@@ -189,13 +189,14 @@ int main(int argc, char *argv[]) {
     const int rank = get_comm_rank(MPI_COMM_WORLD);
 
     if (rank == 0) {
-        std::cout << "MPI_SIZE=" << size << std::endl;
-        std::cout << std::endl;
         if (csv) {
             std::cout
                 << "MPI,Topology,ElementSize,TotalSize,MaxSize,AvgSize,MinSize,"
                    "Algorithm,Run,Time,MBs"
                 << std::endl;
+        } else {
+            std::cout << "MPI_SIZE=" << size << std::endl;
+            std::cout << std::endl;
         }
     }
 
