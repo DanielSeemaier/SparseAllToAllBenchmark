@@ -223,7 +223,7 @@ int main(int argc, char *argv[]) {
                                .c = 0.3},
                               CommunicationMode::EDGE_CUT, MPI_COMM_WORLD);
 
-    for (std::size_t scale : {1, 5, 10, 15, 20, 25}) {
+    for (std::size_t scale : {1, 5, 10, 15, 20}) {
         const auto message_size = 1 << scale;
 
         run_benchmark<int>("identity",

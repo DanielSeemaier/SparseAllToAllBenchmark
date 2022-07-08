@@ -1,7 +1,7 @@
 #!/bin/bash
 num_nodes_exp="0 2 4 6" 
-n_exp_per_node="20"
-m_exp_per_node="25"
+n_exp_per_node="10"
+m_exp_per_node="15"
 time_limit="30:00"
 num_cores="64"
 binary="../build/SparseA2ABenchmark"
@@ -24,7 +24,7 @@ create_script() {
 
 create_submit_file_contents() {
     num_nodes="$1"
-    output="$2"
+    this_output_file="$2"
 
     echo "#SBATCH --nodes=${num_nodes}"
     echo "#SBATCH --ntasks=$((num_cores*num_nodes))"
@@ -33,12 +33,13 @@ create_submit_file_contents() {
     echo "#SBATCH --time=${time_limit}"
     echo "#SBATCH --export=ALL"
     echo "#SBATCH --mem=230gb"
+    echo "#SBATCH --partition=cpuonly"
     echo "module load mpi/openmpi/4.0"
 
     n_exp=$((num_nodes*n_exp_per_node))
     m_exp=$((num_nodes*m_exp_per_node))
 
-    echo "mpirun -n $((num_cores*num_nodes)) --bind-to core ./$binary $n_exp $m_exp >> $output_file"
+    echo "mpirun -n $((num_cores*num_nodes)) --bind-to core ./$binary $n_exp $m_exp >> $this_output_file"
 }
 
 create_script "$submit_file"
