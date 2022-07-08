@@ -1,8 +1,8 @@
 #!/bin/bash
 num_nodes_exp="0 2 4 6" 
-n_exp_per_node="10"
-m_exp_per_node="15"
-time_limit="30:00"
+n_exp_per_node="20"
+m_exp_per_node="25"
+time_limit="10:00"
 num_cores="64"
 binary="../build/SparseA2ABenchmark"
 submit_file="submit.sh"
@@ -50,7 +50,7 @@ for num_nodes_exp in $num_nodes_exp; do
 
     create_script "$this_submit_file"
     create_submit_file_contents "$num_nodes" "$this_output_file" >> "$this_submit_file"
-    echo "./$this_submit_file" >> "$submit_file"
+    echo "sbatch $this_submit_file" >> "$submit_file"
 done
 
 

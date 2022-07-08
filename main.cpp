@@ -238,16 +238,16 @@ int main(int argc, char *argv[]) {
                            scale_topology(grid_8_topology, message_size),
                            MPI_INT, MPI_COMM_WORLD);
 
-        run_benchmark<int>("rgg2d", scale_topology(rgg2d_topology, scale * 100),
+        run_benchmark<int>("rgg2d", scale_topology(rgg2d_topology, scale),
                            MPI_INT, MPI_COMM_WORLD);
 
-        run_benchmark<int>("rgg3d", scale_topology(rgg3d_topology, scale * 100),
+        run_benchmark<int>("rgg3d", scale_topology(rgg3d_topology, scale),
                            MPI_INT, MPI_COMM_WORLD);
 
-        run_benchmark<int>("rhg", scale_topology(rhg_topology, scale * 100),
+        run_benchmark<int>("rhg", scale_topology(rhg_topology, scale),
                            MPI_INT, MPI_COMM_WORLD);
 
-        run_benchmark<int>("rmat", scale_topology(rmat_topology, scale * 100),
+        run_benchmark<int>("rmat", scale_topology(rmat_topology, scale),
                            MPI_INT, MPI_COMM_WORLD);
     }
 
