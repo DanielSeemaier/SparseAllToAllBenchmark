@@ -72,7 +72,7 @@ double compute_mbs(const std::size_t nbytes, const Duration time) {
 
 template <typename Data>
 void run_benchmark(const std::string topology_name, AlltoallTopology topology,
-                   MPI_Datatype data_type, MPI_Comm comm) {
+                   const int scale, MPI_Datatype data_type, MPI_Comm comm) {
     using namespace std::chrono_literals;
 
     const int size = get_comm_size(comm);
@@ -136,13 +136,13 @@ void run_benchmark(const std::string topology_name, AlltoallTopology topology,
 
             if (rank == 0) {
                 if (csv) {
-                    std::cout << size << "," << topology_name << ","
-                              << data_size << "," << global_total_size << ","
-                              << global_max_size << "," << global_avg_size
-                              << "," << global_min_size << ","
-                              << competitor_name << "," << round << ","
-                              << time.count() << ","
-                              << compute_mbs(total_nbytes, time) << std::endl;
+                    std::cout
+                        << size << "," << topology_name << "," << data_size
+                        << "," << scale << "," << global_total_size << ","
+                        << global_max_size << "," << global_avg_size << ","
+                        << global_min_size << "," << competitor_name << ","
+                        << round << "," << time.count() << ","
+                        << compute_mbs(total_nbytes, time) << std::endl;
                 } else {
                     std::cout << std::setw(7);
                     if (ans.empty()) {
@@ -190,10 +190,10 @@ int main(int argc, char *argv[]) {
 
     if (rank == 0) {
         if (csv) {
-            std::cout
-                << "MPI,Topology,ElementSize,TotalSize,MaxSize,AvgSize,MinSize,"
-                   "Algorithm,Run,Time,MBs"
-                << std::endl;
+            std::cout << "MPI,Topology,ElementSize,Scale,TotalSize,MaxSize,"
+                         "AvgSize,MinSize,"
+                         "Algorithm,Run,Time,MBs"
+                      << std::endl;
         } else {
             std::cout << "MPI_SIZE=" << size << std::endl;
             std::cout << std::endl;
@@ -227,27 +227,27 @@ int main(int argc, char *argv[]) {
         const auto message_size = 1 << scale;
 
         run_benchmark<int>("identity",
-                           scale_topology(id_topology, message_size), MPI_INT,
-                           MPI_COMM_WORLD);
+                           scale_topology(id_topology, message_size), scale,
+                           MPI_INT, MPI_COMM_WORLD);
 
         run_benchmark<int>("adjacent_cells_4",
-                           scale_topology(grid_4_topology, message_size),
+                           scale_topology(grid_4_topology, message_size), scale,
                            MPI_INT, MPI_COMM_WORLD);
 
         run_benchmark<int>("adjacent_cells_8",
-                           scale_topology(grid_8_topology, message_size),
+                           scale_topology(grid_8_topology, message_size), scale,
                            MPI_INT, MPI_COMM_WORLD);
 
         run_benchmark<int>("rgg2d", scale_topology(rgg2d_topology, scale),
-                           MPI_INT, MPI_COMM_WORLD);
+                           scale, MPI_INT, MPI_COMM_WORLD);
 
         run_benchmark<int>("rgg3d", scale_topology(rgg3d_topology, scale),
+                           scale, MPI_INT, MPI_COMM_WORLD);
+
+        run_benchmark<int>("rhg", scale_topology(rhg_topology, scale), scale,
                            MPI_INT, MPI_COMM_WORLD);
 
-        run_benchmark<int>("rhg", scale_topology(rhg_topology, scale),
-                           MPI_INT, MPI_COMM_WORLD);
-
-        run_benchmark<int>("rmat", scale_topology(rmat_topology, scale),
+        run_benchmark<int>("rmat", scale_topology(rmat_topology, scale), scale,
                            MPI_INT, MPI_COMM_WORLD);
     }
 
