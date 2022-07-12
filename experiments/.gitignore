@@ -1,2 +1,6 @@
 submit.sh*
 slurm-*
+secrets
+*.err
+*.out
+supermuc/
