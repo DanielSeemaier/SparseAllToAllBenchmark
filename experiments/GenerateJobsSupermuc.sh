@@ -51,7 +51,7 @@ create_submit_file_contents() {
     if (( $num_nodes <= 16 )); then 
     	echo "#SBATCH --partition=micro"
     else 
-        echo "#SBATCH --partition=fat"
+        echo "#SBATCH --partition=general"
     fi
     echo "#SBATCH --nodes=${num_nodes}"
     echo "#SBATCH --ntasks=$((num_cores*num_nodes))"
