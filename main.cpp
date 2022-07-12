@@ -200,20 +200,35 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) { std::cout << "Creating topologies ..." << std::endl; }
     const auto id_topology = create_identitiy_topology(1, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) { std::cout << "Created ID topology" << std::endl; }
     const auto grid_4_topology =
         create_grid_adjacent_topology(1, false, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) { std::cout << "Created 4-Cells topology" << std::endl; }
     const auto grid_8_topology =
         create_grid_adjacent_topology(1, true, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) { std::cout << "Created 8-Cells topology" << std::endl; }
     const auto rgg2d_topology = create_graph_topology(
         {.generator = Generator::RGG2D, .n = 1 << N, .m = 1 << M},
         CommunicationMode::EDGE_CUT, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) { std::cout << "Created RGG2D topology" << std::endl; }
     const auto rgg3d_topology = create_graph_topology(
         {.generator = Generator::RGG3D, .n = 1 << N, .m = 1 << M},
         CommunicationMode::EDGE_CUT, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) { std::cout << "Created RGG3D topology" << std::endl; }
     const auto rhg_topology = create_graph_topology(
         {.generator = Generator::RHG, .n = 1 << N, .m = 1 << M, .gamma = 3.0},
         CommunicationMode::EDGE_CUT, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) { std::cout << "Created RHG topology" << std::endl; }
+    /*
     const auto rmat_topology =
         create_graph_topology({.generator = Generator::RMAT,
                                .n = 1 << N,
@@ -222,6 +237,9 @@ int main(int argc, char *argv[]) {
                                .b = 0.2,
                                .c = 0.3},
                               CommunicationMode::EDGE_CUT, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) { std::cout << "Created RMAT topology" << std::endl; }
+    */
 
     for (std::size_t scale : {1, 5, 10, 15, 20}) {
         const auto message_size = 1 << scale;
@@ -247,8 +265,10 @@ int main(int argc, char *argv[]) {
         run_benchmark<int>("rhg", scale_topology(rhg_topology, scale), scale,
                            MPI_INT, MPI_COMM_WORLD);
 
+	/*
         run_benchmark<int>("rmat", scale_topology(rmat_topology, scale), scale,
                            MPI_INT, MPI_COMM_WORLD);
+			   */
     }
 
     MPI_Finalize();
