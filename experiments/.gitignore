@@ -5,3 +5,4 @@ secrets
 *.out
 supermuc/*
 !supermuc/v1/
+*.pdf
