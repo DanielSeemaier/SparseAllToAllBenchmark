@@ -1,9 +1,10 @@
 #!/bin/bash
-num_nodes_exp="1 3 5 7" 
+num_nodes_exp="-1 1 3 5"
 n_exp_per_node="20"
 m_exp_per_node="25"
 time_limit="30:00"
 num_cores="32"
+num_cores_one_node="16"
 binary="../build/SparseA2ABenchmark"
 working_dir="supermuc"
 submit_file="submit.sh"
@@ -24,6 +25,15 @@ if [[ ! -f "secrets" ]]; then
 fi
 . secrets
 
+compute_num_nodes() {
+    num_nodes_exp="$1"
+    if [[ "$num_nodes_exp" == "-1" ]]; then
+        echo 1
+    else
+        echo $((2 ** num_nodes_exp))
+    fi
+}
+
 create_script() {
     filename="$1"
     rm -rf "$filename"
@@ -34,8 +44,13 @@ create_script() {
 
 create_submit_file_contents() {
     num_nodes_exp="$1"
-    num_nodes=$((2**num_nodes_exp))
+    num_nodes=$(compute_num_nodes "$num_nodes_exp")
     this_output_file="$2"
+
+    my_num_cores="$num_cores"
+    if [[ "$num_nodes_exp" == "-1" ]]; then
+	my_num_cores=16
+    fi
 
     echo "#SBATCH -J SparseAlltoallBenchmark_${num_nodes_exp}"
     echo "#SBATCH -o ./%x.%j.out"
@@ -54,23 +69,23 @@ create_submit_file_contents() {
         echo "#SBATCH --partition=general"
     fi
     echo "#SBATCH --nodes=${num_nodes}"
-    echo "#SBATCH --ntasks=$((num_cores*num_nodes))"
-    echo "#SBATCH --ntasks-per-node=${num_cores}"
+    echo "#SBATCH --ntasks=$((my_num_cores*num_nodes))"
+    echo "#SBATCH --ntasks-per-node=${my_num_cores}"
     echo "#SBATCH --mem=80gb"
     echo "#SBATCH --ear=off"
    
-    echo "module load mpi/openmpi/4.0.7-gcc11"
+    echo "module load openmpi/4.0.7-gcc11"
     echo "module load slurm_setup" 
 
     n_exp=$((num_nodes_exp+n_exp_per_node))
     m_exp=$((num_nodes_exp+m_exp_per_node))
 
-    echo "mpiexec -n $((num_cores*num_nodes)) ./$binary $n_exp $m_exp >> $this_output_file"
+    echo "mpiexec -n $((my_num_cores*num_nodes)) ./$binary $n_exp $m_exp >> $this_output_file"
 }
 
 create_script "$working_dir/$submit_file"
 for num_nodes_exp in $num_nodes_exp; do 
-    num_nodes=$((2**num_nodes_exp))
+    num_nodes=$(compute_num_nodes "$num_nodes_exp")
     this_submit_file="$working_dir/$submit_file.$num_nodes"
     this_output_file="$working_dir/$output_file.$num_nodes"
 
