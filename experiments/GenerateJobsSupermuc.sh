@@ -2,7 +2,7 @@
 num_nodes_exp="1 3 5 7" 
 n_exp_per_node="20"
 m_exp_per_node="25"
-time_limit="10:00"
+time_limit="30:00"
 num_cores="32"
 binary="../build/SparseA2ABenchmark"
 working_dir="supermuc"

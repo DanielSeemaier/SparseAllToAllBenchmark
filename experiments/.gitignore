@@ -3,4 +3,5 @@ slurm-*
 secrets
 *.err
 *.out
-supermuc/
+supermuc/*
+!supermuc/v1/
