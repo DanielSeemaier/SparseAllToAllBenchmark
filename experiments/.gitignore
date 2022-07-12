@@ -4,5 +4,5 @@ secrets
 *.err
 *.out
 supermuc/*
-!supermuc/v1/
+!supermuc/v*/
 *.pdf
