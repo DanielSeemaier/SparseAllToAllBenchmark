@@ -23,7 +23,7 @@ create_script() {
 }
 
 create_submit_file_contents() {
-    num_nodes="$1"
+    num_nodes_exp="$1"
     this_output_file="$2"
 
     echo "#SBATCH --nodes=${num_nodes}"
@@ -36,8 +36,8 @@ create_submit_file_contents() {
     echo "#SBATCH --partition=cpuonly"
     echo "module load mpi/openmpi/4.0"
 
-    n_exp=$((num_nodes*n_exp_per_node))
-    m_exp=$((num_nodes*m_exp_per_node))
+    n_exp=$((num_nodes_exp+n_exp_per_node))
+    m_exp=$((num_nodes_exp+m_exp_per_node))
 
     echo "mpirun -n $((num_cores*num_nodes)) --bind-to core ./$binary $n_exp $m_exp >> $this_output_file"
 }
@@ -49,7 +49,7 @@ for num_nodes_exp in $num_nodes_exp; do
     this_output_file="$output_file.$num_nodes"
 
     create_script "$this_submit_file"
-    create_submit_file_contents "$num_nodes" "$this_output_file" >> "$this_submit_file"
+    create_submit_file_contents "$num_nodes_exp" "$this_output_file" >> "$this_submit_file"
     echo "sbatch $this_submit_file" >> "$submit_file"
 done
 
