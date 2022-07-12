@@ -1,7 +1,7 @@
 #!/bin/bash
 num_nodes_exp="-1 1 3 5"
-n_exp_per_node="20"
-m_exp_per_node="25"
+n_exp_per_node="15"
+m_exp_per_node="20"
 time_limit="30:00"
 num_cores="32"
 num_cores_one_node="16"
