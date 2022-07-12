@@ -40,7 +40,7 @@ create_submit_file_contents() {
     n_exp=$((num_nodes_exp+n_exp_per_node))
     m_exp=$((num_nodes_exp+m_exp_per_node))
 
-    echo "mpirun -n $((num_cores*num_nodes)) --bind-to core ./$binary $n_exp $m_exp >> $this_output_file"
+    echo "mpirun -n $((num_cores*num_nodes)) --bind-to core ./$binary $n_exp $m_exp 1>> $this_output_file"
 }
 
 create_script "$submit_file"
