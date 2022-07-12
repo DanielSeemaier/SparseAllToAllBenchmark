@@ -9,7 +9,7 @@ load_results <- function(cluster) {
         csv <- read.csv(file)
         csv$Scale <- factor(csv$Scale)
         csv$MPI <- as.integer(csv$MPI)
-        csv$MBs <- as.integer(as.numeric(csv$MBs) / csv$MPI)
+        csv$MBs <- as.numeric(as.numeric(csv$MBs) / csv$MPI)
         csv <- csv %>% dplyr::filter(Topology != "")
         results <- rbind(results, csv)
     }
@@ -36,7 +36,7 @@ plot_results <- function(results) {
             geom_line() +
             geom_point() +
             scale_x_continuous(trans = "log2") +
-            scale_y_continuous(trans = "log2") +
+            scale_y_continuous(trans = "log2", breaks = c(1, 4, 16, 64, 256, 1024, 4096)) +
             xlab("Number of MPI processes") +
             ylab("Bandwidth per MPI process [MB/s]") +
             labs(title = paste0("Topology: ", topology),
