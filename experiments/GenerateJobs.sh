@@ -24,6 +24,7 @@ create_script() {
 
 create_submit_file_contents() {
     num_nodes_exp="$1"
+    num_nodes=$((2**num_nodes_exp))
     this_output_file="$2"
 
     echo "#SBATCH --nodes=${num_nodes}"
