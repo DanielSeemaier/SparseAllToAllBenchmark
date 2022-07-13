@@ -2,7 +2,7 @@
 num_nodes_exp="-1 1 3 5 7 9"
 n_exp_per_node="15"
 m_exp_per_node="20"
-time_limit="2:00:00"
+time_limit="30:00"
 num_cores="32"
 num_cores_one_node="16"
 binary="../build/SparseA2ABenchmark"

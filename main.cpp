@@ -34,9 +34,9 @@ auto get_competitors() {
         std::function<AlltoallResult<Data>(
             const std::vector<std::vector<Data>> &, MPI_Datatype, MPI_Comm)>>>{
         std::make_pair("alltoallv", mpi_alltoallv<Data>),
-        // std::make_pair("alltoall", mpi_alltoall<Data>),
-        // std::make_pair("complete_isend_recv",
-        // complete_send_recv_alltoall<Data>),
+        //std::make_pair("alltoall", mpi_alltoall<Data>),
+        std::make_pair("complete_isend_recv",
+        complete_send_recv_alltoall<Data>),
         // std::make_pair("sparse_isend_recv", sparse_send_recv_alltoall<Data>),
         std::make_pair("grid_2d", grid_alltoall<Data>),
     };
