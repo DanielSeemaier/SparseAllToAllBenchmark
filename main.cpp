@@ -35,7 +35,7 @@ auto get_competitors() {
         // std::make_pair("alltoall", mpi_alltoall<Data>),
         std::make_pair("complete_isend_recv",
                        complete_send_recv_alltoall<Data>),
-        std::make_pair("sparse_isend_recv", sparse_send_recv_alltoall<Data>),
+        //std::make_pair("sparse_isend_recv", sparse_send_recv_alltoall<Data>),
         std::make_pair("grid_2d", grid_alltoall<Data>),
     };
 }

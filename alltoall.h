@@ -233,6 +233,9 @@ template <typename Data>
 AlltoallResult<Data> sparse_send_recv_alltoall(
     const std::vector<std::vector<Data>> &data, MPI_Datatype data_type,
     MPI_Comm comm) {
+    static int tag = 0;
+    ++tag;
+    
     const int size = get_comm_size(comm);
     const int rank = get_comm_rank(comm);
     std::vector<MPI_Request> requests;
@@ -262,7 +265,7 @@ AlltoallResult<Data> sparse_send_recv_alltoall(
         send_message_to[pe] = 1;
         requests.emplace_back();
 
-        MPI_Issend(data[pe].data(), data[pe].size(), data_type, pe, 0, comm,
+        MPI_Issend(data[pe].data(), data[pe].size(), data_type, pe, tag, comm,
                    &requests.back());
     }
 
@@ -273,12 +276,12 @@ AlltoallResult<Data> sparse_send_recv_alltoall(
             iprobe_success = 0;
 
             MPI_Status status;
-            MPI_Iprobe(MPI_ANY_SOURCE, 0, comm, &iprobe_success, &status);
+            MPI_Iprobe(MPI_ANY_SOURCE, tag, comm, &iprobe_success, &status);
             if (iprobe_success) {
                 int count;
                 MPI_Get_count(&status, data_type, &count);
                 const int pe = status.MPI_SOURCE;
-                MPI_Recv(result[pe].data(), count, data_type, pe, 0, comm,
+                MPI_Recv(result[pe].data(), count, data_type, pe, status.MPI_TAG, comm,
                          MPI_STATUS_IGNORE);
             }
         }
@@ -298,12 +301,12 @@ AlltoallResult<Data> sparse_send_recv_alltoall(
             iprobe_success = 0;
 
             MPI_Status status;
-            MPI_Iprobe(MPI_ANY_SOURCE, 0, comm, &iprobe_success, &status);
+            MPI_Iprobe(MPI_ANY_SOURCE, tag, comm, &iprobe_success, &status);
             if (iprobe_success) {
                 int count;
                 MPI_Get_count(&status, data_type, &count);
                 const int pe = status.MPI_SOURCE;
-                MPI_Recv(result[pe].data(), count, data_type, pe, 0, comm,
+                MPI_Recv(result[pe].data(), count, data_type, pe, status.MPI_TAG, comm,
                          MPI_STATUS_IGNORE);
             }
         }
