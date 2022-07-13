@@ -47,7 +47,7 @@ plot_results <- function(results) {
             theme_bw() +
             geom_line() +
             geom_point() +
-            scale_x_continuous(trans = "log2", breaks = c(16, 64, 256, 1024)) +
+            scale_x_continuous(trans = "log2", breaks = c(16, 64, 256, 1024, 4096)) +
             scale_y_continuous(trans = "log2", breaks = c(1, 4, 16, 64, 256, 1024, 4096)) +
             xlab("Number of MPI processes") +
             ylab("Bandwidth per MPI process [MB/s]") +
@@ -58,7 +58,7 @@ plot_results <- function(results) {
     }
 }
 
-supermuc <- load_results("supermuc/v2/")
+supermuc <- load_results("supermuc/v2.5/")
 
 pdf("supermuc.pdf")
 plot_results(supermuc)

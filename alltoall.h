@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <numeric>
+#include <sstream>
 #include <tuple>
 #include <vector>
 
@@ -37,6 +38,14 @@ AlltoallResult<Data> grid_alltoall(const std::vector<std::vector<Data>> &data,
         data_counts[pe] = data[pe].size();
     }
 
+    // Exchange counts within payload
+    std::vector<int> row_counts(size);
+
+    const auto start_payload_counts = now();
+    MPI_Alltoall(data_counts.data(), grid_size, MPI_INT, row_counts.data(),
+                 grid_size, MPI_INT, col_comm);
+    const auto end_payload_counts = now();
+
     // 1st hop send/recv counts/displs
     std::vector<int> row_send_counts(grid_size);
     for (int row = 0; row < grid_size; ++row) {
@@ -47,10 +56,12 @@ AlltoallResult<Data> grid_alltoall(const std::vector<std::vector<Data>> &data,
     }
 
     std::vector<int> row_recv_counts(grid_size);
-    const auto start_1st_hop_counts = now();
-    MPI_Alltoall(row_send_counts.data(), 1, MPI_INT, row_recv_counts.data(), 1,
-                 MPI_INT, col_comm);
-    const auto end_1st_hop_counts = now();
+    for (int row = 0; row < grid_size; ++row) {
+        for (int col = 0; col < grid_size; ++col) {
+            const int pe = row * grid_size + col;
+            row_recv_counts[row] += row_counts[pe];
+        }
+    }
 
     std::vector<int> row_send_displs(grid_size + 1);
     std::vector<int> row_recv_displs(grid_size + 1);
@@ -76,14 +87,6 @@ AlltoallResult<Data> grid_alltoall(const std::vector<std::vector<Data>> &data,
                   row_recv_counts.data(), row_recv_displs.data(), data_type,
                   col_comm);
     const auto end_1st_hop = now();
-
-    // Exchange counts within payload
-    std::vector<int> row_counts(size);
-
-    const auto start_payload_counts = now();
-    MPI_Alltoall(data_counts.data(), grid_size, MPI_INT, row_counts.data(),
-                 grid_size, MPI_INT, col_comm);
-    const auto end_payload_counts = now();
 
     std::vector<int> row_displs(size + 1);
     std::partial_sum(row_counts.begin(), row_counts.end(),
@@ -129,12 +132,20 @@ AlltoallResult<Data> grid_alltoall(const std::vector<std::vector<Data>> &data,
     }
 
     // Exchange counts
-    std::vector<int> col_recv_counts(grid_size);
+    std::vector<int> subcounts(size);
+    const auto start_final_counts = now();
+    MPI_Alltoall(col_subcounts.data(), grid_size, MPI_INT, subcounts.data(),
+                 grid_size, MPI_INT, row_comm);
+    const auto end_final_counts = now();
 
-    const auto start_2nd_hop_counts = now();
-    MPI_Alltoall(col_counts.data(), 1, MPI_INT, col_recv_counts.data(), 1,
-                 MPI_INT, row_comm);
-    const auto end_2nd_hop_counts = now();
+    std::vector<int> col_recv_counts(grid_size);
+    for (int row = 0; row < grid_size; ++row) {
+        int sum = 0;
+        for (int col = 0; col < grid_size; ++col) {
+            sum += subcounts[row * grid_size + col];
+        }
+        col_recv_counts[row] = sum;
+    }
 
     std::vector<int> col_recv_displs(grid_size + 1);
     std::partial_sum(col_recv_counts.begin(), col_recv_counts.end(),
@@ -148,13 +159,6 @@ AlltoallResult<Data> grid_alltoall(const std::vector<std::vector<Data>> &data,
                   data_type, col_recv_buf.data(), col_recv_counts.data(),
                   col_recv_displs.data(), data_type, row_comm);
     const auto end_2nd_hop = now();
-
-    std::vector<int> subcounts(size);
-
-    const auto start_final_counts = now();
-    MPI_Alltoall(col_subcounts.data(), grid_size, MPI_INT, subcounts.data(),
-                 grid_size, MPI_INT, row_comm);
-    const auto end_final_counts = now();
 
     std::vector<std::vector<Data>> result(size);
 
@@ -176,10 +180,8 @@ AlltoallResult<Data> grid_alltoall(const std::vector<std::vector<Data>> &data,
     MPI_Comm_free(&col_comm);
 
     const auto time = std::chrono::duration_cast<Resolution>(
-        (end_1st_hop_counts - start_1st_hop_counts) +
         (end_1st_hop - start_1st_hop) +
         (end_payload_counts - start_payload_counts) +
-        (end_2nd_hop_counts - start_2nd_hop_counts) +
         (end_2nd_hop - start_2nd_hop) +
         (end_final_counts - start_final_counts));
     return {std::move(result), time};
@@ -235,7 +237,7 @@ AlltoallResult<Data> sparse_send_recv_alltoall(
     MPI_Comm comm) {
     static int tag = 0;
     ++tag;
-    
+
     const int size = get_comm_size(comm);
     const int rank = get_comm_rank(comm);
     std::vector<MPI_Request> requests;
@@ -281,8 +283,8 @@ AlltoallResult<Data> sparse_send_recv_alltoall(
                 int count;
                 MPI_Get_count(&status, data_type, &count);
                 const int pe = status.MPI_SOURCE;
-                MPI_Recv(result[pe].data(), count, data_type, pe, status.MPI_TAG, comm,
-                         MPI_STATUS_IGNORE);
+                MPI_Recv(result[pe].data(), count, data_type, pe,
+                         status.MPI_TAG, comm, MPI_STATUS_IGNORE);
             }
         }
 
@@ -306,8 +308,8 @@ AlltoallResult<Data> sparse_send_recv_alltoall(
                 int count;
                 MPI_Get_count(&status, data_type, &count);
                 const int pe = status.MPI_SOURCE;
-                MPI_Recv(result[pe].data(), count, data_type, pe, status.MPI_TAG, comm,
-                         MPI_STATUS_IGNORE);
+                MPI_Recv(result[pe].data(), count, data_type, pe,
+                         status.MPI_TAG, comm, MPI_STATUS_IGNORE);
             }
         }
 
