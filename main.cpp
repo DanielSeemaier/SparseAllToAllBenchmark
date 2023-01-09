@@ -23,7 +23,7 @@
 constexpr int NUM_REPETITIONS = 10;
 constexpr int NUM_WARMUPS = 1;
 
-constexpr bool USE_RMAT = false;
+constexpr bool USE_RMAT = true;
 
 constexpr bool csv = true;
 
@@ -35,10 +35,12 @@ auto get_competitors() {
             const std::vector<std::vector<Data>> &, MPI_Datatype, MPI_Comm)>>>{
         std::make_pair("alltoallv", mpi_alltoallv<Data>),
         //std::make_pair("alltoall", mpi_alltoall<Data>),
-        std::make_pair("complete_isend_recv",
-        complete_send_recv_alltoall<Data>),
-        // std::make_pair("sparse_isend_recv", sparse_send_recv_alltoall<Data>),
+        //std::make_pair("complete_isend_recv",
+        //complete_send_recv_alltoall<Data>),
+        std::make_pair("sparse_isend_recv", sparse_send_recv_alltoall<Data>),
+        std::make_pair("sparse_isend_recv_new", sparse_send_recv_alltoall_new<Data>),
         std::make_pair("grid_2d", grid_alltoall<Data>),
+        std::make_pair("rdma_put", mpi_rdma_put<Data>),
     };
 }
 
