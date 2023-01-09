@@ -322,6 +322,78 @@ AlltoallResult<Data> sparse_send_recv_alltoall(
 }
 
 template <typename Data>
+AlltoallResult<Data> sparse_send_recv_alltoall_new(
+    const std::vector<std::vector<Data>> &data, MPI_Datatype data_type,
+    MPI_Comm comm) {
+    static int tag = 0;
+    ++tag;
+
+    const int size = get_comm_size(comm);
+    const int rank = get_comm_rank(comm);
+    std::vector<MPI_Request> requests;
+    requests.reserve(size);
+    std::vector<std::uint8_t> send_message_to(size);
+
+    // Exchange send / recv counts to preallocate recv buffer
+    std::vector<int> send_counts(size);
+    for (int pe = 0; pe < size; ++pe) {
+        send_counts[pe] = data[pe].size();
+    }
+    std::vector<int> recv_counts(size);
+    MPI_Alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1, MPI_INT,
+                 comm);
+
+    std::vector<std::vector<Data>> result(size);
+    for (int pe = 0; pe < size; ++pe) {
+        result[pe].resize(recv_counts[pe]);
+    }
+
+    const auto start = now();
+    for (int pe = 0; pe < size; ++pe) {
+        if (data[pe].empty()) {
+            continue;
+        }
+
+        send_message_to[pe] = 1;
+        requests.emplace_back();
+
+        MPI_Issend(data[pe].data(), data[pe].size(), data_type, pe, tag, comm,
+                   &requests.back());
+    }
+
+    MPI_Request barrier_request = MPI_REQUEST_NULL;
+    while (true) {
+      int probe_sucess = false;
+      MPI_Status status;
+      MPI_Iprobe(MPI_ANY_SOURCE, tag, comm, &probe_sucess, &status);
+      if (probe_sucess) {
+        int count;
+        MPI_Get_count(&status, data_type, &count);
+        const int pe = status.MPI_SOURCE;
+        MPI_Recv(result[pe].data(), count, data_type, pe, status.MPI_TAG, comm,
+                 MPI_STATUS_IGNORE);
+      }
+      if (barrier_request != MPI_REQUEST_NULL) {
+        int barrier_finished = false;
+        MPI_Test(&barrier_request, &barrier_finished, MPI_STATUS_IGNORE);
+        if (barrier_finished) {
+          break;
+        }
+      } else {
+        int all_sends_finished = false;
+        MPI_Testall(requests.size(), requests.data(), &all_sends_finished, MPI_STATUSES_IGNORE);
+        if (all_sends_finished) {
+          MPI_Ibarrier(comm, &barrier_request);
+        }
+      }
+    }
+    const auto end = now();
+
+    const auto time = std::chrono::duration_cast<Resolution>(end - start);
+    return {std::move(result), time};
+}
+
+template <typename Data>
 AlltoallResult<Data> mpi_alltoall(const std::vector<std::vector<Data>> &data,
                                   MPI_Datatype data_type, MPI_Comm comm) {
     const int size = get_comm_size(comm);
