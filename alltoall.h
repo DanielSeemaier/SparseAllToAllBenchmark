@@ -498,3 +498,77 @@ AlltoallResult<Data> mpi_alltoallv(const std::vector<std::vector<Data>> &data,
     return {std::move(result), elapsed_time};
 }
 
+template <typename Data>
+AlltoallResult<Data> mpi_rdma_put(const std::vector<std::vector<Data>> &data,
+                                   MPI_Datatype data_type, MPI_Comm comm) {
+  const int size = get_comm_size(comm);
+  const int rank = get_comm_rank(comm);
+  int *recv_counts = nullptr;
+  MPI_Win count_win;
+  std::vector<int> send_counts(size);
+  MPI_Win_allocate((size + 1) * sizeof(int), sizeof(int), MPI_INFO_NULL, comm, &recv_counts, &count_win);
+  MPI_Win_fence(0, count_win);
+  const auto begin_put_counts = now();
+  for (auto pe = 0; pe < size; ++pe) {
+    send_counts[pe] = data[pe].size();
+    recv_counts[pe] = 0;
+  }
+  MPI_Win_fence(0, count_win);
+  for (auto pe = 0; pe < size; ++pe) {
+    if (send_counts[pe] > 0) {
+      MPI_Put(&send_counts[pe], // origin_addr
+              1,                // origin_count
+              MPI_INT,          // origin_datatype
+              pe,               // target_rank
+              rank,             // target_disp
+              1,                // target_count
+              MPI_INT,          // target_datatype,
+              count_win         // win
+      );
+    }
+  }
+  MPI_Win_fence(0, count_win);
+  const auto end_put_counts = now();
+  std::exclusive_scan(recv_counts, recv_counts + size + 1, recv_counts, 0);
+  MPI_Win_fence(0, count_win);
+  Data* recv_buf;
+  MPI_Win recv_win;
+  MPI_Win_allocate(recv_counts[size] * sizeof(Data), sizeof(Data), MPI_INFO_NULL, comm, &recv_buf, &recv_win);
+  MPI_Win_fence(0, recv_win);
+  const auto begin_put_data = now();
+  for (auto pe = 0; pe < size; ++pe) {
+    if (send_counts[pe] > 0) {
+      int recv_displ;
+      MPI_Request req;
+      MPI_Rget(&recv_displ, 1, MPI_INT, pe, rank, 1, MPI_INT, count_win, &req);
+      MPI_Wait(&req, MPI_STATUS_IGNORE);
+      MPI_Put(data[pe].data(), // origin_addr
+              send_counts[pe], // origin_count
+              data_type,       // origin_datatype
+              pe,              // target_rank
+              recv_displ,      // target_disp
+              send_counts[pe], // target_count
+              data_type,       // target_datatype,
+              recv_win         // win
+      );
+    }
+  }
+  MPI_Win_fence(0, recv_win);
+  MPI_Win_fence(0, count_win);
+  const auto end_put_data = now();
+
+  // Build output format
+  std::vector<std::vector<Data>> result(size);
+  for (int pe = 0; pe < size; ++pe) {
+    auto recv_size = recv_counts[pe + 1] - recv_counts[pe];
+    result[pe].resize(recv_size);
+    std::copy(recv_buf + recv_counts[pe],
+              recv_buf + recv_counts[pe + 1], result[pe].begin());
+  }
+
+  const auto elapsed_time = std::chrono::duration_cast<Resolution>(
+      (end_put_counts - begin_put_counts) + (end_put_data - begin_put_data));
+  MPI_Win_free(&count_win);
+  MPI_Win_free(&recv_win);
+  return {std::move(result), elapsed_time};
+}
